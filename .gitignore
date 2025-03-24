@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 虚拟环境
+.venv/
+venv/
+ENV/
+
+# IDE文件
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 临时文件和日志
+*.log
+temp/*
+!temp/.gitkeep
+tmp/
+.DS_Store
+
+# 项目特定
+# 模型文件（通常较大）
+models/whisper/*
+models/whisper.cpp/*
+models/*.bin
+models/*.ggml
+!models/whisper/.gitkeep
+!models/whisper.cpp/.gitkeep
+
+# Vosk模型文件（通常较大）
+models/vosk-model-cn-0.22/
+
+# 上传和输出文件夹（可能包含用户数据）
+uploads/*
+output/*
+!uploads/.gitkeep
+!output/.gitkeep
+
+# 本地配置文件
+.env
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3 
