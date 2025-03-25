@@ -63,3 +63,4 @@ output/*
 *.db
 *.sqlite
 *.sqlite3 
+venv_py310/*

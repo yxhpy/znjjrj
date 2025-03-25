@@ -5,7 +5,7 @@ SQLAlchemy==1.4.46
 requests==2.31.0
 python-multipart==0.0.6
 moviepy==1.0.3
-numpy==1.24.3
+numpy
 SpeechRecognition==3.10.0
 Pillow==9.5.0
 gtts==2.3.2
@@ -23,3 +23,18 @@ langchain-core
 httpx==0.24.1
 faster-whisper==1.1.1
 soundfile
+
+# TTS依赖
+TTS==0.22.0
+torch
+
+# 视频处理相关
+opencv-python
+scenedetect
+
+# 工具包
+loguru
+
+# 开发工具
+pytest
+pytest-cov

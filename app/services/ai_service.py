@@ -1,16 +1,14 @@
-import os
-import requests
-from typing import List, Dict, Any, Optional
 import json
 import logging
+import os
 import re
-from langchain import PromptTemplate
-from langchain_openai import ChatOpenAI
+from typing import List, Dict, Any
+
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 from app.config import settings
-from app.schemas.video import ChapterPoint, VideoAnalysisResult
 from app.core.database import VideoType
+from app.schemas.video import ChapterPoint, VideoAnalysisResult
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +27,21 @@ class AIService:
     def _initialize_model(self):
         """根据配置初始化适当的LangChain模型"""
         try:
+            # 添加调试日志，记录实际使用的配置值
+            logger.info(f"初始化模型配置: provider={self.provider}, model={self.model_name}, base_url={self.base_url}")
+            
             if self.provider == "openai":
-                self.chat_model = ChatOpenAI(
+                # 为OpenAI提供一个配置，避免proxies参数问题
+                from langchain_openai.chat_models.base import ChatOpenAI as ConfigurableChatOpenAI
+                
+                self.chat_model = ConfigurableChatOpenAI(
                     model_name=self.model_name,
                     openai_api_key=self.api_key,
                     openai_api_base=self.base_url,
                     temperature=0.7,
                     max_tokens=2000,
+                    # 添加http_client=None解决proxies问题
+                    http_client=None
                 )
             elif self.provider == "azure":
                 # Azure OpenAI实现
@@ -50,24 +56,85 @@ class AIService:
                     max_tokens=2000,
                 )
             elif self.provider == "dashscope":
-                # 阿里百炼实现
-                os.environ["DASHSCOPE_API_KEY"] = self.api_key
-                from langchain_community.llms import DashScope
+                # 阿里云通义千问 - 使用OpenAI兼容接口调用
+                from openai import OpenAI
                 
-                self.chat_model = DashScope(
+                # 记录DashScope配置信息
+                logger.info(f"使用DashScope兼容接口: api_key={self.api_key[:5]}***, base_url={self.base_url}")
+                
+                # 创建一个OpenAI兼容的客户端
+                openai_client = OpenAI(
+                    api_key=self.api_key,
+                    base_url=self.base_url,
+                    # 移除可能自动添加的proxies参数
+                    http_client=None
+                )
+                
+                # 创建一个兼容LangChain接口的包装类
+                class DashScopeOpenAIWrapper:
+                    def __init__(self, client, model_name, temperature=0.7, max_tokens=2000):
+                        self.client = client
+                        self.model_name = model_name
+                        self.temperature = temperature
+                        self.max_tokens = max_tokens
+                
+                    def __call__(self, messages):
+                        # 将LangChain消息格式转换为OpenAI格式
+                        openai_messages = []
+                        for message in messages:
+                            if isinstance(message, HumanMessage):
+                                openai_messages.append({"role": "user", "content": message.content})
+                            elif isinstance(message, SystemMessage):
+                                openai_messages.append({"role": "system", "content": message.content})
+                            elif isinstance(message, AIMessage):
+                                openai_messages.append({"role": "assistant", "content": message.content})
+                            else:
+                                # 处理其他类型的消息
+                                role = message.type if hasattr(message, 'type') else "user"
+                                openai_messages.append({"role": role, "content": message.content})
+                        
+                        try:
+                            # 调用OpenAI兼容接口
+                            logger.info(f"调用DashScope API: model={self.model_name}, messages_count={len(openai_messages)}")
+                            response = self.client.chat.completions.create(
+                                model=self.model_name,
+                                messages=openai_messages,
+                                temperature=self.temperature,
+                                max_tokens=self.max_tokens
+                            )
+                            
+                            # 创建一个类，模拟LangChain响应对象
+                            class LangChainResponse:
+                                def __init__(self, content):
+                                    self.content = content
+                            
+                            # 从响应中提取内容并返回LangChain格式响应
+                            content = response.choices[0].message.content
+                            return LangChainResponse(content)
+                        except Exception as e:
+                            error_msg = f"调用通义千问API失败: {str(e)}"
+                            logger.error(error_msg)
+                            raise Exception(error_msg)
+                
+                self.chat_model = DashScopeOpenAIWrapper(
+                    client=openai_client,
                     model_name=self.model_name,
-                    dashscope_api_key=self.api_key,
                     temperature=0.7,
                     max_tokens=2000,
                 )
             else:
                 # 默认使用OpenAI实现
                 logger.warning(f"未知的模型提供商: {self.provider}，使用OpenAI作为默认提供商")
-                self.chat_model = ChatOpenAI(
+                # 为OpenAI提供一个配置，避免proxies参数问题
+                from langchain_openai.chat_models.base import ChatOpenAI as ConfigurableChatOpenAI
+                
+                self.chat_model = ConfigurableChatOpenAI(
                     model_name=self.model_name,
                     openai_api_key=self.api_key,
                     temperature=0.7,
                     max_tokens=2000,
+                    # 添加http_client=None解决proxies问题
+                    http_client=None
                 )
         except Exception as e:
             logger.error(f"初始化LangChain模型失败: {str(e)}")
@@ -90,12 +157,25 @@ class AIService:
             # 调用模型
             response = self.chat_model(langchain_messages)
             
+            # 检查response类型并提取content
+            content = ""
+            if hasattr(response, "content"):
+                # 标准LangChain响应对象
+                content = response.content
+            elif isinstance(response, dict) and "content" in response:
+                # 字典类型响应
+                content = response["content"]
+            else:
+                # 未知格式响应，尝试转换为字符串
+                logger.warning(f"未知响应格式: {type(response)}, 尝试转换为字符串")
+                content = str(response)
+            
             # 将LangChain响应格式转换回原来的格式
             return {
                 "choices": [
                     {
                         "message": {
-                            "content": response.content
+                            "content": content
                         }
                     }
                 ]

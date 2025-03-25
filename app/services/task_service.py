@@ -25,8 +25,7 @@ class TaskService:
             status=TaskStatus.PENDING,
             progress=0.0,
             message="任务已创建，等待处理",
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+            created_at=datetime.utcnow()
         )
         
         # 保存到数据库

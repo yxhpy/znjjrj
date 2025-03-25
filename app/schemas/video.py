@@ -1,7 +1,8 @@
 from pydantic import BaseModel, HttpUrl, Field
-from typing import Optional, List
+from typing import Optional, List, Union
 from datetime import datetime
 from app.core.database import VideoType, TaskStatus
+from enum import Enum
 
 class VideoUrlRequest(BaseModel):
     url: HttpUrl
@@ -12,18 +13,28 @@ class VideoUploadResponse(BaseModel):
     message: str = "视频上传成功，开始处理"
     status: TaskStatus
 
-class TaskStatusResponse(BaseModel):
+class TaskCreate(BaseModel):
+    """创建任务请求模型"""
+    video_path: Optional[str] = None
+    video_url: Optional[str] = None
+    video_type: VideoType = VideoType.MOVIE
+    use_omni: bool = False  # 是否使用全模态模型
+
+class TaskResponse(BaseModel):
+    """任务创建响应模型"""
     task_id: str
-    status: TaskStatus
+    message: str
+
+class TaskStatusResponse(BaseModel):
+    """任务状态响应模型"""
+    id: str
+    status: str
     progress: float
     message: Optional[str] = None
-    video_type: VideoType
-    created_at: datetime
-    updated_at: datetime
-    result_path: Optional[str] = None
-    
-    class Config:
-        orm_mode = True
+    output_path: Optional[str] = None
+    created_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    use_omni: Optional[bool] = False
 
 class ChapterPoint(BaseModel):
     """章节时间点"""

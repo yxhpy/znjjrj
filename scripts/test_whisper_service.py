@@ -96,6 +96,9 @@ def test_whisper_service(audio_path=None, duration=5, options=None):
     else:
         print(f"使用提供的音频文件: {audio_path}")
     
+    # 确保使用绝对路径
+    audio_path = os.path.abspath(audio_path)
+    
     if not os.path.exists(audio_path):
         print(f"错误: 音频文件不存在: {audio_path}")
         return
@@ -123,6 +126,7 @@ def test_whisper_service(audio_path=None, duration=5, options=None):
     
     # 开始识别
     print("正在识别音频...")
+    print(f"使用绝对路径: {audio_path}")
     result = service.recognize(audio_data, "wav", 16000, options)
     
     print("\n识别结果:")

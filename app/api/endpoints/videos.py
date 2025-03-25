@@ -4,11 +4,14 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+import uuid
+import threading
 
-from app.schemas.video import VideoUrlRequest, VideoUploadResponse, TaskStatusResponse
-from app.core.database import get_db, VideoType
+from app.schemas.video import VideoUrlRequest, VideoUploadResponse, TaskStatusResponse, TaskCreate, TaskResponse
+from app.core.database import get_db, VideoType, Task, TaskStatus
 from app.config import UPLOAD_DIR, OUTPUT_DIR, settings
 from app.services.task_service import task_service
+from app.services.video_service import video_service
 
 router = APIRouter()
 
@@ -75,7 +78,18 @@ async def get_task_status(task_id: str, db: Session = Depends(get_db)):
             detail=f"未找到任务: {task_id}"
         )
     
-    return task
+    # 确保返回的对象包含所有必要的字段
+    # 创建一个新的响应对象而不是直接返回task对象
+    return TaskStatusResponse(
+        id=task.id,
+        status=task.status,
+        progress=task.progress,
+        message=task.message,
+        output_path=task.result_path,
+        created_at=str(task.created_at) if task.created_at else None,
+        completed_at=str(task.updated_at) if task.updated_at else None,
+        use_omni=False  # 数据库中可能没有这个字段，默认为False
+    )
 
 @router.get("/tasks/{task_id}/download")
 async def download_result(task_id: str, db: Session = Depends(get_db)):
@@ -121,4 +135,57 @@ async def list_tasks(
     - **skip**: 跳过记录数
     - **limit**: 返回记录数
     """
-    return task_service.list_tasks(skip=skip, limit=limit, db=db) 
+    tasks = task_service.list_tasks(skip=skip, limit=limit, db=db)
+    
+    # 将每个Task转换为TaskStatusResponse对象
+    response_tasks = []
+    for task in tasks:
+        response_tasks.append(TaskStatusResponse(
+            id=task.id,
+            status=task.status,
+            progress=task.progress,
+            message=task.message,
+            output_path=task.result_path,
+            created_at=str(task.created_at) if task.created_at else None,
+            completed_at=str(task.updated_at) if task.updated_at else None,
+            use_omni=False  # 数据库中可能没有这个字段，默认为False
+        ))
+    
+    return response_tasks
+
+@router.post("", response_model=TaskResponse)
+def create_video_task(
+    task_data: TaskCreate,
+    db: Session = Depends(get_db)
+):
+    """创建新的视频处理任务"""
+    try:
+        # 生成唯一任务ID
+        task_id = str(uuid.uuid4())
+        
+        # 创建新任务
+        new_task = Task(
+            id=task_id,
+            video_path=task_data.video_path,
+            video_url=task_data.video_url,
+            video_type=task_data.video_type,
+            status=TaskStatus.PENDING,
+            use_omni=task_data.use_omni  # 添加是否使用全模态模型的标志
+        )
+        
+        db.add(new_task)
+        db.commit()
+        
+        # 启动后台处理任务
+        threading.Thread(
+            target=video_service.process_video, 
+            args=(new_task, db)
+        ).start()
+        
+        return {"task_id": task_id, "message": "任务已提交"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"创建任务失败: {str(e)}"
+        ) 
